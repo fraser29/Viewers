@@ -78,6 +78,10 @@ module.exports = (env, argv) => {
         // Hoisted Yarn Workspace Modules
         path.resolve(__dirname, '../../../node_modules'),
         SRC_DIR,
+        path.resolve(
+          __dirname,
+          '/home/fraser/DEV/KISPI/KISPI-URO-V3/kispi/kispi-modes/kispi-uro/node_modules'
+        ),
       ],
     },
     plugins: [
