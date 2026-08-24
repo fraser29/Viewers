@@ -1,5 +1,6 @@
 import { Types, DicomMetadataStore, utils } from '@ohif/core';
-import dcmjs from 'dcmjs';
+import { datasetToDicomBlob, setNonEnumerableInstanceProperty } from './utils/dicomWriter';
+import { registerNaturalizedDatasetsForLocalWadouri } from './utils/registerNaturalizedDatasetForLocalWadouri';
 
 const { downloadBlob } = utils;
 
@@ -734,10 +735,11 @@ const commandsModule = ({
         displaySetIndexToShow > -1 && displaySetIndexToShow < currentDisplaySets.length;
         displaySetIndexToShow += direction
       ) {
-        if (
-          !excludeNonImageModalities ||
-          !nonImageModalities.includes(currentDisplaySets[displaySetIndexToShow].Modality)
-        ) {
+        const nextDisplaySet = currentDisplaySets[displaySetIndexToShow];
+        if (nextDisplaySet.madeInClient) {
+          continue;
+        }
+        if (!excludeNonImageModalities || !nonImageModalities.includes(nextDisplaySet.Modality)) {
           break;
         }
       }
@@ -783,11 +785,12 @@ const commandsModule = ({
       if (dataSource === 'download') {
         return async dicom => {
           const instances = Array.isArray(dicom) ? dicom : [dicom];
+          registerNaturalizedDatasetsForLocalWadouri(instances);
           DicomMetadataStore.addInstances(instances, true);
           if (instances.length !== 1) {
             throw new Error('Download only supports a single DICOM instance');
           }
-          const reportBlob = dcmjs.data.datasetToBlob(instances[0]);
+          const reportBlob = datasetToDicomBlob(instances[0]);
           downloadBlob(reportBlob, { filename: defaultFileName || 'dicom.dcm' });
         };
       }
@@ -795,14 +798,15 @@ const commandsModule = ({
       if (dataSource === 'copyToClipboard') {
         return async dicom => {
           const instances = Array.isArray(dicom) ? dicom : [dicom];
+          registerNaturalizedDatasetsForLocalWadouri(instances);
           DicomMetadataStore.addInstances(instances, true);
           if (instances.length !== 1) {
             throw new Error('Copy to clipboard only supports a single DICOM instance');
           }
-          const reportBlob = dcmjs.data.datasetToBlob(instances[0]);
+          const reportBlob = datasetToDicomBlob(instances[0]);
           const type = defaultContentType || 'application/dicom';
           await navigator.clipboard.write([
-            new ClipboardItem({ [type]: new Blob([reportBlob], { type }) }),
+            new ClipboardItem({ [type]: reportBlob }),
           ]);
         };
       }
@@ -816,12 +820,18 @@ const commandsModule = ({
 
       return async (dicom, { dicomDict } = {}) => {
         const instances = Array.isArray(dicom) ? dicom : [dicom];
-        const config = resolvedDataSource.getConfig?.();
-        if (config?.wadoRoot) {
-          instances.forEach(instance => {
-            instance.wadoRoot = config.wadoRoot;
-          });
+        // Always keep an in-memory wadouri copy so DICOM can be read without re-fetching.
+        registerNaturalizedDatasetsForLocalWadouri(instances);
+
+        if (dataSource !== 'dicomlocal') {
+          const config = resolvedDataSource.getConfig?.();
+          if (config?.wadoRoot) {
+            instances.forEach(instance => {
+              setNonEnumerableInstanceProperty(instance, 'wadoRoot', config.wadoRoot);
+            });
+          }
         }
+
         DicomMetadataStore.addInstances(instances, true);
         for (const instance of instances) {
           await resolvedDataSource.store.dicom(instance, null, dicomDict);
@@ -831,6 +841,33 @@ const commandsModule = ({
           resolvedDataSource.deleteStudyMetadataPromise(uid);
         }
       };
+    },
+
+    /**
+     * Launches a workflow (mode) for a study from the worklist. This is the
+     * default `workList.onStudyDoubleClick` command.
+     *
+     * @param study - the StudyRow the action applies to
+     * @param workflows - the workflows applicable to the study, in menu order;
+     *   each has `id`, `displayName`, `isDefault` and `launchWithStudy(study)`
+     * @param defaultWorkflow - the user's default workflow when it applies to
+     *   the study
+     * @param workflowId - command option to force a specific workflow (mode id)
+     *   instead of the default/first applicable one
+     */
+    launchDefaultMode: ({ study, workflows = [], defaultWorkflow, workflowId }) => {
+      const workflow = workflowId
+        ? workflows.find(w => w.id === workflowId)
+        : (defaultWorkflow ?? workflows[0]);
+      if (!workflow) {
+        console.warn(
+          workflowId
+            ? `launchDefaultMode: workflow '${workflowId}' is not applicable to the study`
+            : 'launchDefaultMode: no workflow is applicable to the study'
+        );
+        return;
+      }
+      workflow.launchWithStudy(study);
     },
   };
 
@@ -861,6 +898,10 @@ const commandsModule = ({
     addDisplaySetAsLayer: actions.addDisplaySetAsLayer,
     removeDisplaySetLayer: actions.removeDisplaySetLayer,
     createStoreFunction: actions.createStoreFunction,
+    launchDefaultMode: {
+      commandFn: actions.launchDefaultMode,
+      context: 'WORKLIST',
+    },
   };
 
   return {
