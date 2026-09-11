@@ -139,7 +139,6 @@ module.exports = (env, argv) => {
         path.resolve(__dirname, '../node_modules'),
         path.resolve(__dirname, '../../../node_modules'),
         SRC_DIR,
-        path.resolve(__dirname, '../kispi/kispi-modes/kispi-uro/node_modules'),
       ],
     },
     plugins: [

@@ -65,6 +65,11 @@
     {
       "packageName": "@ohif/extension-ultrasound-pleura-bline",
       "version": "3.0.0"
+    },
+    {
+      "packageName": "@kispi/extension-kispi-uro",
+      "version": "0.0.0",
+      "directory": "./../kispi/kispi-extensions/kispi-uro-extension"
     }
   ],
   "modes": [
@@ -99,6 +104,11 @@
     {
       "packageName": "@ohif/mode-ultrasound-pleura-bline",
       "version": "3.0.0"
+    },
+    {
+      "packageName": "kispi-uro",
+      "version": "0.0.1",
+      "directory": "./../kispi/kispi-modes/kispi-uro"
     }
   ],
   "public": [
